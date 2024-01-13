@@ -23,7 +23,7 @@ const verifyJWT = (req, res, next) => {
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
     if (err) {
       return res
-        .status(403)
+        .status(401)
         .send({ error: true, message: "unauthorized access" });
     }
     req.decoded = decoded;
@@ -53,6 +53,18 @@ async function run() {
     const reviewCOllection = client.db("bistroBossDB").collection("reviews");
     const cartCollection = client.db("bistroBossDB").collection("carts");
 
+    // admin verification
+    //Warning: use verifyJWT before verify Admin
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      if (user?.role !== "admin") {
+        return res.status(403).send({ error: true, message: "forbidden user" });
+      }
+      next();
+    };
+
     // jwt token
     app.post("/jwt", (req, res) => {
       const user = req.body;
@@ -62,8 +74,15 @@ async function run() {
       res.send({ token });
     });
 
+    /**
+     * ইউজারকে সিকিউর কারা কিছু কিছু জিনিস
+     * 1. do not show secure links to those who should not see the links
+     * 2. use jwt token= verifyJWT
+     * 3. use verifyAdmin middleware
+     */
+
     // user collection apis
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyJWT, verifyAdmin, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
@@ -79,6 +98,27 @@ async function run() {
       res.send(result);
     });
 
+    // ইউজার এডমিন কি’না সেটা চেক করা
+    // ইউজার ভেরিফাই কি’না **ডিকোডেড ইমেইল এবং রিকোয়েস্ট ইমেল চেক
+
+    app.get("/users/admin/:email", verifyJWT, async (req, res) => {
+      const email = req.params.email;
+      if (req.decoded.email !== email) {
+        res.send({ admin: false });
+      }
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      const result = { admin: user?.role === "admin" };
+      res.send(result);
+    });
+
+    /**
+     * security layer: verifyJWT
+     * email same
+     * check admin
+     * */
+
+    //একজন ইউজারকে এডিমন রোল দেওয়া
     app.patch("/users/admin/:id", async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
