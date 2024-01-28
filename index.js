@@ -217,12 +217,89 @@ async function run() {
     });
 
     // user and admin home status
-    app.get("/admin-stats", async (req, res) => {
+    app.get("/admin-stats", verifyJWT, verifyAdmin, async (req, res) => {
       const users = await usersCollection.estimatedDocumentCount();
       const products = await menuCollection.estimatedDocumentCount();
       const orders = await paymentCollection.estimatedDocumentCount();
 
-      res.send({ users, products, orders });
+      // best way to get sum of a field is to use group and sum operator
+
+      /*       
+      paymentCollection.aggregate([
+        {
+          $group: {
+            _id:null,
+            total:{$sum: '$price'},
+          }
+        }
+      ]).toArray();
+      */
+
+      const payments = await paymentCollection.find().toArray();
+      const revenueTotal = payments.reduce(
+        (sum, payment) => sum + payment.price,
+        0
+      );
+      const revenue = revenueTotal.toFixed(2);
+
+      res.send({ revenue, users, products, orders });
+    });
+
+    /**
+     *
+     * --------------------
+     * BANGLA SYSTEM (second best solution) --------------------
+     * 1. load all payments
+     * 2. for each payment, get the menuItems array
+     * 3. for each item in  menuItems array get the menuItem from the menu collection
+     * 4. put them in an array: allOrderedItems
+     * 5. separate allOrderedItems by category using filter
+     * 6. now get the quantity by using length: pizza.length
+     * 7. for each category use reduce to get the total amount spent on this category
+     *
+     * */
+
+    //Chat GPT Search:   I have a mongodb collection called payments it has a field menuItems containing id of the menu items selected during an order. Now I need to connect menu items id with the menu collection where every menu item has a category and price.
+    // ----------------
+    // I need the number of menu items in each category. Also, I need the price of each category that is in the menuItems of the payment collection.
+    // -------
+    // I am using express mongodb but no mongoose. Give me the api route
+
+    app.get("/order-stats", verifyJWT, verifyAdmin, async (req, res) => {
+      const pipeline = [
+        {
+          $unwind: "$menuItems",
+        },
+        {
+          $lookup: {
+            from: "menu",
+            localField: "menuItems",
+            foreignField: "_id",
+            as: "menuItemDetails",
+          },
+        },
+        {
+          $unwind: "$menuItemDetails",
+        },
+        {
+          $group: {
+            _id: "$menuItemDetails.category",
+            count: { $sum: 1 },
+            total: { $sum: "$menuItemDetails.price" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            category: "$_id",
+            count: 1,
+            total: { $round: ["$total", 2] },
+          },
+        },
+      ];
+
+      const result = await paymentCollection.aggregate(pipeline).toArray();
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
