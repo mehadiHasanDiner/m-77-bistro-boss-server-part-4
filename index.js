@@ -216,6 +216,15 @@ async function run() {
       res.send({ insertResult, deleteResult });
     });
 
+    // user and admin home status
+    app.get("/admin-stats", async (req, res) => {
+      const users = await usersCollection.estimatedDocumentCount();
+      const products = await menuCollection.estimatedDocumentCount();
+      const orders = await paymentCollection.estimatedDocumentCount();
+
+      res.send({ users, products, orders });
+    });
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
